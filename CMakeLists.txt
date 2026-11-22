@@ -98,7 +98,7 @@ GET_FILENAME_COMPONENT(installAbs
 INCLUDE_DIRECTORIES(${depsAbs}/dlpack/include)
 INCLUDE_DIRECTORIES(src)
 IF(BUILD_TF)
-    INCLUDE_DIRECTORIES(${depsAbs}/libtensorflow/include)
+    INCLUDE_DIRECTORIES(${depsAbs}/libtensorflow/include ${depsAbs}/libtensorflow/include/external/local_tsl)
 ENDIF()
 IF(BUILD_TFLITE)
     INCLUDE_DIRECTORIES(${depsAbs}/libtensorflow-lite/include)

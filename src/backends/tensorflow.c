@@ -247,6 +247,23 @@ RAI_Model *RAI_ModelCreateTF(RAI_Backend backend, const char *devicestr, RAI_Mod
     tfbuffer->length = modellen;
     tfbuffer->data = modeldef;
 
+    if (device == RAI_DEVICE_GPU && deviceid >= 0) {
+        // Pin the imported graph to the requested GPU via the import-time
+        // default device. TF maintains a process-global virtual->physical
+        // GPU map (GpuIdManager) that is initialized once, on the first
+        // session that uses GPUs. Setting a per-session
+        // gpu_options.visible_device_list therefore cannot give different
+        // sessions different physical GPUs: the first session fixes the
+        // mapping for the whole process and every later session that
+        // requests a different GPU comes up without any GPU device at all.
+        // Importing each model copy with a default device pins its
+        // placement instead, and works for any number of per-GPU model
+        // copies hosted by the same process.
+        char pinDevice[32];
+        snprintf(pinDevice, sizeof(pinDevice), "/GPU:%lld", (long long)deviceid);
+        TF_ImportGraphDefOptionsSetDefaultDevice(options, pinDevice);
+    }
+
     TF_GraphImportGraphDef(model, tfbuffer, options, status);
 
     if (TF_GetCode(status) != TF_OK) {
@@ -329,19 +346,18 @@ RAI_Model *RAI_ModelCreateTF(RAI_Backend backend, const char *devicestr, RAI_Mod
             }
         }
     } else if (device == RAI_DEVICE_GPU) {
-        if (deviceid == -1) {
-            // Set
-            // config.gpu_options.allow_growth = True
-            uint8_t config[4] = {0x32, 0x02, 0x20, 0x01};
-            TF_SetConfig(sessionOptions, (void *)config, 4, optionsStatus);
-        } else {
-            // Set
-            // config.gpu_options.allow_growth = True
-            // config.gpu_options.visible_device_list = '<deviceid>'
-            uint8_t config[7] = {0x32, 0x05, 0x20, 0x01, 0x2a, 0x01, 0x30};
-            config[6] += (uint8_t)deviceid;
-            TF_SetConfig(sessionOptions, (void *)config, 7, optionsStatus);
-        }
+        // Set
+        // config.gpu_options.allow_growth = True
+        // NOTE: gpu_options.visible_device_list is deliberately NOT set for
+        // indexed GPU devices. It is applied to the process-global
+        // virtual->physical GPU map that is written once (by the first GPU
+        // session in the process) and never updated, so a second session
+        // with a different visible device list ends up with no GPU at all
+        // ("ERR GPU requested but TF couldn't find CUDA"). Per-GPU pinning
+        // is done at graph-import time via
+        // TF_ImportGraphDefOptionsSetDefaultDevice instead.
+        uint8_t config[4] = {0x32, 0x02, 0x20, 0x01};
+        TF_SetConfig(sessionOptions, (void *)config, 4, optionsStatus);
     }
 
     if (TF_GetCode(optionsStatus) != TF_OK) {
